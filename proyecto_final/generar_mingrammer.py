@@ -37,7 +37,7 @@ with Diagram(
         orch >> Edge(label="k-NN (384-d)") >> db
 
     with Cluster("Servicios Cloud (Google Cloud Platform)"):
-        gemini = AIPlatform("Google Gemini API\n(gemini-3.8-flash)")
+        gemini = AIPlatform("Google Gemini API\n(gemini-3.5-flash)")
         gcs = GCS("Cloud Storage\n(Respaldo MP4/HLS)")
         crun = Run("Cloud Run Jobs\n(Serverless Opcional)")
 
