@@ -1,0 +1,62 @@
+[
+  {
+    "question": "¿Qué son las comunidades de práctica y para qué sirven según la clase?",
+    "used_llm": true,
+    "model_used": "gemini-3.5-flash",
+    "retrieval_latency_ms": 247.01,
+    "llm_latency_ms": 5672.44,
+    "answer": "Según los fragmentos proporcionados, las **comunidades de práctica** son:\n\n* Grupos de personas con intereses, conocimientos o experiencias [01:09:07] que comparten una práctica común basada en la confianza y en el apoyo de la tecnología [01:31:47].\n\n**Sirven para:**\n\n* Reunirse para aprender, aclarar ideas y resolver problemas [01:09:07].\n* Generar un aprendizaje activo, mejorar la cultura organizacional y promover la innovación dentro del proceso [01:31:47].",
+    "top_hit": {
+      "chunk_id": 335,
+      "lecture_id": 7,
+      "lecture_title": "Gestión del Conocimiento (Clase Demo)",
+      "filename": "transcripcion_demo_gestion_conocimiento.txt",
+      "hls_path": "/hls/demo_gestion_conocimiento/index.m3u8",
+      "start_sec": 4147,
+      "end_sec": 4229,
+      "timestamp": "01:09:07",
+      "content": "Lo responderé en placa. Las comunidades de práctica son grupos de personas con intereses, conocimientos o experiencias que no tienen específico. Y se reúnen para aprender, para aclarar las ideas que resolver el problema de una manera o de una manera así. ¿Alguien quiere contestar? ¿Alguien que interesa? ¿Alguien que anotó? ¿Hay alguna duda sobre cultura, liderazgo, espíritus de liderazgo o rol de liderazgo? Parece que no. ¿El logro para la excepción? ¿Al finalizar la excepción con los alumnos disimiles? ¿Con una comunidad de plástica, o con un grupo de ecología?",
+      "score": 0.7402
+    }
+  },
+  {
+    "question": "¿Qué riesgo existe cuando un trabajador experimentado deja la organización?",
+    "used_llm": true,
+    "model_used": "gemini-3.5-flash",
+    "retrieval_latency_ms": 99.89,
+    "llm_latency_ms": 2620.85,
+    "answer": "El riesgo que existe cuando un trabajador experimentado deja la organización (o cambia de puesto) es el de perder conocimiento [59:27].",
+    "top_hit": {
+      "chunk_id": 329,
+      "lecture_id": 7,
+      "lecture_title": "Gestión del Conocimiento (Clase Demo)",
+      "filename": "transcripcion_demo_gestion_conocimiento.txt",
+      "hls_path": "/hls/demo_gestion_conocimiento/index.m3u8",
+      "start_sec": 3567,
+      "end_sec": 3609,
+      "timestamp": "59:27",
+      "content": "El problema identificado es que se necesita un liderazgo que sirve. Más es el tratame de conocimiento y las nuevas ideas. Y finalizando con la parte de discusión de conocimiento, en la situación actual, se utiliza información técnica y experiencia para organizar las operaciones. Y el problema identificado es que tiene el riesgo de perder conocimiento cuando un trabajador experimentado deja la organización o cambia de cuesta. Ya, pero es como un foco. Bueno, yo solo... Sí, claro. A ver, chau, vamos.",
+      "score": 0.5669
+    }
+  },
+  {
+    "question": "¿Qué papel cumple el liderazgo en la gestión del conocimiento?",
+    "used_llm": true,
+    "model_used": "gemini-3.5-flash",
+    "retrieval_latency_ms": 85.27,
+    "llm_latency_ms": 4574.76,
+    "answer": "Según los fragmentos proporcionados, el liderazgo cumple con los siguientes papeles:\n\n* Se requiere un «liderazgo que sirve» para el tratamiento del conocimiento y las nuevas ideas [59:27].\n* El líder es la persona con mayores capacidades para «mirar, cultivar, incendiar, etcétera», marcando el ejemplo de cómo deben comportarse las personas y motivándolas [01:02:53].\n* Los estilos de liderazgo y gestión provienen del diseño de una estrategia y de una generación diversa [39:11].",
+    "top_hit": {
+      "chunk_id": 329,
+      "lecture_id": 7,
+      "lecture_title": "Gestión del Conocimiento (Clase Demo)",
+      "filename": "transcripcion_demo_gestion_conocimiento.txt",
+      "hls_path": "/hls/demo_gestion_conocimiento/index.m3u8",
+      "start_sec": 3567,
+      "end_sec": 3609,
+      "timestamp": "59:27",
+      "content": "El problema identificado es que se necesita un liderazgo que sirve. Más es el tratame de conocimiento y las nuevas ideas. Y finalizando con la parte de discusión de conocimiento, en la situación actual, se utiliza información técnica y experiencia para organizar las operaciones. Y el problema identificado es que tiene el riesgo de perder conocimiento cuando un trabajador experimentado deja la organización o cambia de cuesta. Ya, pero es como un foco. Bueno, yo solo... Sí, claro. A ver, chau, vamos.",
+      "score": 0.7503
+    }
+  }
+]

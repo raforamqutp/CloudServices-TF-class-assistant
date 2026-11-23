@@ -1,0 +1,18 @@
+{
+  "lectures_indexed": 16,
+  "total_chunks": 747,
+  "num_eval_queries": 25,
+  "semantic_hnsw": {
+    "hit_at_3_pct": 60.0,
+    "hit_at_5_pct": 64.0,
+    "mrr": 0.517,
+    "avg_total_latency_ms": 81.85,
+    "avg_db_latency_ms": 74.95
+  },
+  "lexical_fts": {
+    "hit_at_3_pct": 0.0,
+    "hit_at_5_pct": 0.0,
+    "mrr": 0.0,
+    "avg_total_latency_ms": 71.6
+  }
+}

@@ -1,0 +1,54 @@
+# Entorno y secretos
+.env
+mi_agente/.env
+mi_agente/.adk/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+
+# Multimedia y datos pesados
+*.mp4
+*.mp3
+*.ts
+*.m3u8
+*.rar
+*.zip
+audio_snippets/
+frames/
+recordings/
+video-demo/
+transcriptions/
+
+# Material de estudio, notas y archivos temporales
+docs/
+files/
+paths-3545/
+PAQUETE_PARA_LAPTOP/
+CONTEXTO_GENERAL_PROYECTO.md
+CONTEXTO_INICIAL.md
+deploy_lab2.py
+ver_diagramas_c4.html
+~$*.docx
+tmp_*.html
+
+# Scripts auxiliares antiguos
+scripts/generate_ieee_paper.py
+scripts/process_*.py
+scripts/transcribe_*.py
+scripts/update_paper_5_refs.py
+scripts/install_diagrams_and_check_db.sh
+scripts/benchmark_results.json
+
+# En proyecto_final solo versionar el documento final y los diagramas finales
+proyecto_final/*
+!proyecto_final/proyecto_final_local_first_final.docx
+!proyecto_final/generar_mingrammer.py
+!proyecto_final/fig1_c4_contexto_ieee.png
+!proyecto_final/fig2_c4_contenedores_ieee.png
+!proyecto_final/fig3_c4_nivel3_componentes_ieee.png
+!proyecto_final/fig4_uml_secuencia_ieee.png
+!proyecto_final/fig5_rag_benchmark_ieee.png
+!proyecto_final/fig_mingrammer_arquitectura.png
+!proyecto_final/fig_demo_ui_real.png

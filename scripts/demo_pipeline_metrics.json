@@ -1,0 +1,50 @@
+{
+  "video_file": "GestionDelConocimiento - GMT20260919-193007_Recording_1920x852.mp4",
+  "audio_extraction": {
+    "duration_s": 8165.97,
+    "elapsed_s": 20.99,
+    "speed_x": 389.0,
+    "input_mb": 160.0,
+    "output_mb": 62.3,
+    "reduction_pct": 61.1,
+    "audio_path": "D:\\Projects\\Cloud\\audio_snippets\\demo_gestion_conocimiento.mp3"
+  },
+  "hls_benchmark_300s_cpu": {
+    "encoder": "libx264",
+    "duration_s": 300.0,
+    "elapsed_s": 7.96,
+    "speed_x": 37.7,
+    "avg_cpu_pct": 83.3,
+    "segments": 30,
+    "playlist_path": "D:\\Projects\\Cloud\\frames\\demo_bench_cpu_300s\\index.m3u8"
+  },
+  "hls_benchmark_300s_gpu": {
+    "encoder": "h264_nvenc",
+    "duration_s": 300.0,
+    "elapsed_s": 11.45,
+    "speed_x": 26.2,
+    "avg_cpu_pct": 17.3,
+    "segments": 30,
+    "playlist_path": "D:\\Projects\\Cloud\\frames\\demo_bench_gpu_300s\\index.m3u8"
+  },
+  "hls_full_video_gpu": {
+    "encoder": "h264_nvenc",
+    "duration_s": 8165.97,
+    "elapsed_s": 338.96,
+    "speed_x": 24.1,
+    "avg_cpu_pct": 24.2,
+    "segments": 817,
+    "playlist_path": "D:\\Projects\\Cloud\\frames\\demo_gestion_conocimiento\\index.m3u8"
+  },
+  "whisper_transcription": {
+    "model": "faster-whisper-medium",
+    "device": "cuda",
+    "compute_type": "float16",
+    "model_load_s": 2.79,
+    "audio_duration_s": 8165.97,
+    "elapsed_s": 148.97,
+    "speed_x": 54.8,
+    "lines": 687,
+    "transcript_path": "D:\\Projects\\Cloud\\transcriptions\\transcripcion_demo_gestion_conocimiento.txt"
+  }
+}
