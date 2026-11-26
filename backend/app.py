@@ -94,8 +94,9 @@ def list_lectures():
 @app.post("/api/ingest-video")
 async def ingest_video_endpoint(
     file: UploadFile = File(...),
-    course: str = Form("Gestión del Conocimiento"),
+    course: str = Form("TICS"),
     title: str = Form(""),
+    max_seconds: int = Form(0),
 ):
     t0 = time.perf_counter()
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(file.filename or "clase.mp4"))
@@ -110,8 +111,12 @@ async def ingest_video_endpoint(
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "audio.mp3")
         txt_path = os.path.join(tmpdir, f"transcripcion_{os.path.splitext(safe_name)[0]}.txt")
+        ff_cmd = ["ffmpeg", "-y", "-i", video_path]
+        if max_seconds > 0:
+            ff_cmd.extend(["-t", str(max_seconds)])
+        ff_cmd.extend(["-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audio_path])
         subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audio_path],
+            ff_cmd,
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -262,7 +267,8 @@ def index():
     .btn-outline:hover { background:#eff6ff; }
     .ingest-panel { display:none; background:#ffffff; border:1.5px solid #93c5fd; border-radius:10px; padding:14px 16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
     .ingest-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-    .ingest-row input[type="text"] { min-width:200px; flex:1; }
+    .ingest-row select, .ingest-row input[type="text"] { padding:9px 11px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; }
+    .ingest-row input[type="text"] { min-width:180px; flex:1; }
     #ingestStatus { font-size:13px; color:#1e40af; margin-top:8px; font-weight:600; }
     .grid { display:grid; grid-template-columns: 1.15fr 1fr; gap:18px; }
     .card { background:#ffffff; border-radius:10px; padding:18px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
@@ -300,8 +306,13 @@ def index():
     </div>
     <div id="ingestPanel" class="ingest-panel">
       <div class="ingest-row">
-        <input id="ingCourse" type="text" value="Demo en Vivo" placeholder="Nombre del curso (ej. TICS)" />
+        <select id="ingCourseSelect" onchange="onIngestCourseChange()"></select>
+        <input id="ingNewCourse" type="text" placeholder="Nombre del nuevo curso..." style="display:none;" />
         <input id="ingTitle" type="text" placeholder="Título de la sesión (opcional)" />
+        <select id="ingScope">
+          <option value="300">Demo rápida: primeros 5 min (ideal sin GPU)</option>
+          <option value="0">Clase completa</option>
+        </select>
         <input id="ingFile" type="file" accept="video/mp4,video/*" style="flex:1; padding:7px;" />
         <button id="ingBtn" class="btn-primary" onclick="uploadAndIngest()">Procesar grabación</button>
       </div>
@@ -352,6 +363,27 @@ def index():
         )
       ];
       bar.innerHTML = pills.join('');
+
+      const ingSel = document.getElementById('ingCourseSelect');
+      if (ingSel) {
+        const prev = ingSel.value;
+        ingSel.innerHTML = courses.map(c => `<option value="${c}">${c}</option>`).join('') +
+          '<option value="__new__">+ Nuevo curso...</option>';
+        if (prev && (courses.includes(prev) || prev === '__new__')) {
+          ingSel.value = prev;
+        } else if (selectedCourse && courses.includes(selectedCourse)) {
+          ingSel.value = selectedCourse;
+        }
+        onIngestCourseChange();
+      }
+    }
+
+    function onIngestCourseChange() {
+      const sel = document.getElementById('ingCourseSelect');
+      const inp = document.getElementById('ingNewCourse');
+      if (sel && inp) {
+        inp.style.display = sel.value === '__new__' ? 'block' : 'none';
+      }
     }
 
     function renderSessionControls() {
@@ -520,10 +552,15 @@ def index():
         status.textContent = 'Selecciona un archivo MP4 para procesar.';
         return;
       }
+      const selCourse = document.getElementById('ingCourseSelect').value;
+      const chosenCourse = selCourse === '__new__'
+        ? (document.getElementById('ingNewCourse').value.trim() || 'Nuevo Curso')
+        : selCourse;
       const fd = new FormData();
       fd.append('file', fileInput.files[0]);
-      fd.append('course', document.getElementById('ingCourse').value.trim() || 'General');
+      fd.append('course', chosenCourse);
       fd.append('title', document.getElementById('ingTitle').value.trim());
+      fd.append('max_seconds', document.getElementById('ingScope').value);
 
       btn.disabled = true;
       status.textContent = 'Extrayendo audio, transcribiendo y generando vectores...';
