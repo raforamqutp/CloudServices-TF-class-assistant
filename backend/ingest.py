@@ -40,18 +40,25 @@ def format_sec_label(sec: int) -> str:
 
 
 def parse_transcript_file(filepath: str, max_words_per_chunk: int = 95) -> List[Dict]:
-    pattern = re.compile(r"^\[(\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\]\s*(.+)$")
+    pattern_hms = re.compile(r"^\[(\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\]\s*(.+)$")
+    pattern_sec = re.compile(r"^\[(\d+(?:\.\d+)?)s\s*->\s*\d+(?:\.\d+)?s\]\s*(.+)$")
     entries: List[Tuple[int, str]] = []
 
     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line = line.strip()
-            m = pattern.match(line)
-            if not m:
-                continue
-            sec = parse_timestamp_to_sec(m.group(1))
-            text = m.group(2).strip()
-            if len(text) < 4 or text.lower().count("no,") > 5:
+            m1 = pattern_hms.match(line)
+            if m1:
+                sec = parse_timestamp_to_sec(m1.group(1))
+                text = m1.group(2).strip()
+            else:
+                m2 = pattern_sec.match(line)
+                if not m2:
+                    continue
+                sec = int(float(m2.group(1)))
+                text = m2.group(2).strip()
+            low = text.lower()
+            if len(text) < 4 or low.count("no,") > 5 or low.count("sí,") > 5:
                 continue
             entries.append((sec, text))
 
@@ -97,12 +104,17 @@ def parse_transcript_file(filepath: str, max_words_per_chunk: int = 95) -> List[
     return chunks
 
 
-def ingest_transcript(filepath: str, title: str, hls_path: str = "") -> Dict:
+def ingest_transcript(
+    filepath: str,
+    title: str,
+    hls_path: str = "",
+    course: str = "Servicios Cloud",
+) -> Dict:
     t0 = time.perf_counter()
     filename = os.path.basename(filepath)
     chunks = parse_transcript_file(filepath)
     if not chunks:
-        return {"filename": filename, "chunks": 0, "status": "empty"}
+        return {"filename": filename, "title": title, "course": course, "chunks": 0, "status": "empty"}
 
     model = get_embedding_model()
     texts = [c["content"] for c in chunks]
@@ -116,15 +128,16 @@ def ingest_transcript(filepath: str, title: str, hls_path: str = "") -> Dict:
         register_vector(conn)
         row = conn.execute(
             """
-            INSERT INTO lectures (filename, title, duration_sec, hls_path)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO lectures (filename, title, course, duration_sec, hls_path)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (filename) DO UPDATE
             SET title = EXCLUDED.title,
+                course = EXCLUDED.course,
                 duration_sec = EXCLUDED.duration_sec,
                 hls_path = EXCLUDED.hls_path
             RETURNING id;
             """,
-            (filename, title, duration_sec, hls_path),
+            (filename, title, course, duration_sec, hls_path),
         ).fetchone()
         lecture_id = row[0]
 
@@ -153,12 +166,66 @@ def ingest_transcript(filepath: str, title: str, hls_path: str = "") -> Dict:
         "lecture_id": lecture_id,
         "filename": filename,
         "title": title,
+        "course": course,
         "chunks": len(chunks),
         "duration_sec": duration_sec,
         "embed_time_s": round(t_emb, 3),
         "total_time_s": round(total_time, 3),
         "status": "ok",
     }
+
+
+def register_video_lecture(filename: str, title: str, media_path: str, course: str) -> Dict:
+    with psycopg.connect(DATABASE_URL) as conn:
+        row = conn.execute(
+            """
+            INSERT INTO lectures (filename, title, course, duration_sec, hls_path)
+            VALUES (%s, %s, %s, 0, %s)
+            ON CONFLICT (filename) DO UPDATE
+            SET title = EXCLUDED.title,
+                course = EXCLUDED.course,
+                hls_path = EXCLUDED.hls_path
+            RETURNING id;
+            """,
+            (filename, title, course, media_path),
+        ).fetchone()
+        conn.commit()
+    return {"lecture_id": row[0], "filename": filename, "title": title, "course": course, "chunks": 0, "status": "video_only"}
+
+
+def _format_tics_title(stem: str) -> str:
+    if stem.lower() == "silabo":
+        return "TICS - Presentación del Sílabo"
+    m = re.match(r"GMT(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})", stem)
+    if m:
+        y, mo, d, hh, mm = m.groups()
+        return f"TICS - Sesión {d}/{mo}/{y} ({hh}:{mm})"
+    return f"TICS - {stem.replace('_', ' ')}"
+
+
+def ingest_tics_course(
+    video_dir: str = r"D:\UTP\2026 - Agosto\TICS\AG-files\grabaciones_clases",
+    trans_dir: str = r"D:\UTP\2026 - Agosto\TICS\AG-files\transcripciones",
+) -> List[Dict]:
+    results = []
+    if not os.path.isdir(video_dir):
+        return results
+
+    mp4_files = sorted(f for f in os.listdir(video_dir) if f.lower().endswith(".mp4"))
+    for mp4 in mp4_files:
+        stem = os.path.splitext(mp4)[0]
+        title = _format_tics_title(stem)
+        media_url = f"/media/tics/{mp4}"
+        txt_candidate = os.path.join(trans_dir, f"{stem}.txt")
+        if os.path.isfile(txt_candidate):
+            res = ingest_transcript(txt_candidate, title, hls_path=media_url, course="TICS")
+        else:
+            res = register_video_lecture(f"tics_{mp4}", title, media_url, course="TICS")
+        results.append(res)
+        print(
+            f"[INGEST TICS] {res['title']}: {res['chunks']} chunks | status={res['status']}"
+        )
+    return results
 
 
 def ingest_all_transcriptions(trans_dir: str = r"D:\Projects\Cloud\transcriptions") -> List[Dict]:
@@ -168,17 +235,20 @@ def ingest_all_transcriptions(trans_dir: str = r"D:\Projects\Cloud\transcription
     for f in files:
         full_path = os.path.join(trans_dir, f)
         if "demo_gestion_conocimiento" in f:
-            title = "Gestión del Conocimiento (Clase Demo)"
+            title = "Gestión del Conocimiento (Sesión 19/09)"
             hls_rel = "/hls/demo_gestion_conocimiento/index.m3u8"
+            course = "Gestión del Conocimiento"
         else:
             title = f.replace("transcripcion_", "Servicios Cloud - ").replace(".txt", "").replace("_", " ").title()
             hls_rel = "/hls/test_hls_gpu/index.m3u8" if "20261019" in f else ""
-        res = ingest_transcript(full_path, title, hls_rel)
+            course = "Servicios Cloud"
+        res = ingest_transcript(full_path, title, hls_rel, course=course)
         results.append(res)
         print(
             f"[INGEST] {res['filename']}: {res['chunks']} chunks | "
             f"embed={res.get('embed_time_s', 0)}s | total={res.get('total_time_s', 0)}s"
         )
+    results.extend(ingest_tics_course())
     return results
 
 

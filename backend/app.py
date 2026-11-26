@@ -40,39 +40,58 @@ HLS_DIR = os.getenv("HLS_DIR", r"D:\Projects\Cloud\frames")
 if os.path.isdir(HLS_DIR):
     app.mount("/hls", StaticFiles(directory=HLS_DIR), name="hls")
 
+TICS_VIDEO_DIR = os.getenv("TICS_VIDEO_DIR", r"D:\UTP\2026 - Agosto\TICS\AG-files\grabaciones_clases")
+if os.path.isdir(TICS_VIDEO_DIR):
+    app.mount("/media/tics", StaticFiles(directory=TICS_VIDEO_DIR), name="tics_media")
+
 
 class ChatRequest(BaseModel):
     question: str
     top_k: int = 5
     lecture_id: Optional[int] = None
+    course: Optional[str] = None
 
 
 @app.get("/api/lectures")
 def list_lectures():
     with psycopg.connect(DATABASE_URL) as conn:
         rows = conn.execute(
-            "SELECT id, filename, title, duration_sec, hls_path FROM lectures ORDER BY (hls_path <> '') DESC, id;"
+            """
+            SELECT l.id, l.filename, l.title, l.course, l.duration_sec, l.hls_path,
+                   COUNT(c.id) AS chunk_count
+            FROM lectures l
+            LEFT JOIN transcript_chunks c ON c.lecture_id = l.id
+            GROUP BY l.id
+            ORDER BY l.course, (COALESCE(l.hls_path, '') <> '') DESC, l.title;
+            """
         ).fetchall()
     return [
         {
             "id": r[0],
             "filename": r[1],
             "title": r[2],
-            "duration_sec": r[3],
-            "hls_path": r[4] or "",
+            "course": r[3],
+            "duration_sec": r[4],
+            "hls_path": r[5] or "",
+            "chunk_count": r[6],
         }
         for r in rows
     ]
 
 
 @app.get("/api/search")
-def search(q: str = Query(..., min_length=2), top_k: int = 5, lecture_id: Optional[int] = None):
-    return semantic_search(q, top_k=top_k, lecture_id=lecture_id)
+def search(
+    q: str = Query(..., min_length=2),
+    top_k: int = 5,
+    lecture_id: Optional[int] = None,
+    course: Optional[str] = None,
+):
+    return semantic_search(q, top_k=top_k, lecture_id=lecture_id, course=course)
 
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    retrieval = semantic_search(req.question, top_k=req.top_k, lecture_id=req.lecture_id)
+    retrieval = semantic_search(req.question, top_k=req.top_k, lecture_id=req.lecture_id, course=req.course)
     hits = retrieval["results"]
     api_key = os.getenv("GOOGLE_API_KEY", "").strip()
 
@@ -136,22 +155,36 @@ def index():
   <style>
     * { box-sizing: border-box; }
     body { font-family: 'Segoe UI', system-ui, sans-serif; background:#f8fafc; color:#0f172a; margin:0; padding:20px; }
-    .container { max-width:1280px; margin:auto; }
-    .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #cbd5e1; }
+    .container { max-width:1320px; margin:auto; }
+    .topbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #cbd5e1; }
     .topbar h1 { margin:0; font-size:22px; font-weight:700; color:#0f172a; }
-    .topbar select { padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; font-weight:500; min-width:300px; }
+    .course-bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; align-items:center; }
+    .course-pill { padding:7px 14px; border-radius:999px; border:1px solid #cbd5e1; background:#ffffff; color:#334155; font-size:13.5px; font-weight:600; cursor:pointer; }
+    .course-pill:hover { border-color:#1d4ed8; color:#1d4ed8; }
+    .course-pill.active { background:#1d4ed8; color:#ffffff; border-color:#1d4ed8; }
+    .controls-row { display:flex; gap:10px; align-items:center; }
+    .controls-row select { padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; font-weight:500; min-width:310px; }
     .grid { display:grid; grid-template-columns: 1.15fr 1fr; gap:18px; }
     .card { background:#ffffff; border-radius:10px; padding:18px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
     h2 { margin:0 0 12px 0; font-size:17px; color:#1e293b; font-weight:700; }
-    .search-row { display:flex; gap:8px; margin-bottom:12px; }
+    .session-list { margin-top:12px; max-height:190px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:6px; background:#f8fafc; }
+    .session-item { display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; text-align:left; padding:8px 10px; margin-bottom:4px; border-radius:6px; border:1px solid transparent; background:#ffffff; color:#0f172a; font-size:13.5px; cursor:pointer; }
+    .session-item:hover { border-color:#93c5fd; background:#eff6ff; }
+    .session-item.active { border-color:#1d4ed8; background:#dbeafe; font-weight:600; }
+    .badge { font-size:11.5px; padding:2px 7px; border-radius:999px; font-weight:600; white-space:nowrap; }
+    .badge-course { background:#e2e8f0; color:#334155; }
+    .badge-video { background:#dcfce7; color:#166534; }
+    .badge-text { background:#fef3c7; color:#92400e; }
+    .search-row { display:flex; gap:8px; margin-bottom:10px; }
     input { flex:1; padding:10px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14.5px; }
-    button { padding:10px 18px; border-radius:6px; border:none; background:#1d4ed8; color:#ffffff; font-weight:600; cursor:pointer; font-size:14.5px; }
-    button:hover { background:#1e40af; }
-    button:disabled { opacity:0.6; cursor:wait; }
+    .btn-primary { padding:10px 18px; border-radius:6px; border:none; background:#1d4ed8; color:#ffffff; font-weight:600; cursor:pointer; font-size:14.5px; }
+    .btn-primary:hover { background:#1e40af; }
+    .btn-primary:disabled { opacity:0.6; cursor:wait; }
+    .scope-note { font-size:12.5px; color:#475569; margin-bottom:10px; }
     .hit { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 14px; margin-bottom:10px; }
     .ts-btn { background:#1d4ed8; color:#ffffff; font-weight:700; padding:4px 10px; border-radius:4px; font-size:13px; cursor:pointer; border:none; margin-right:8px; }
     .ts-btn:hover { background:#1e40af; }
-    .meta { font-size:13px; color:#475569; margin-bottom:6px; }
+    .meta { font-size:13px; color:#475569; margin-bottom:6px; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
     .answer { white-space:pre-wrap; background:#eff6ff; color:#0f172a; padding:14px; border-radius:8px; border:1px solid #bfdbfe; border-left:4px solid #1d4ed8; margin-bottom:12px; font-size:14.5px; line-height:1.5; }
     #status { font-size:13px; color:#475569; margin-bottom:10px; font-weight:500; }
   </style>
@@ -160,20 +193,25 @@ def index():
   <div class="container">
     <div class="topbar">
       <h1>Asistente de Clases Grabadas</h1>
-      <select id="lectureSelect" onchange="onLectureChange()"></select>
+      <div class="controls-row">
+        <select id="lectureSelect" onchange="onLectureChange()"></select>
+      </div>
     </div>
+    <div id="courseBar" class="course-bar"></div>
     <div class="grid">
       <div class="card">
         <h2 id="videoTitle">Reproductor de Video</h2>
-        <video id="player" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto" style="width:100%; height:410px;"></video>
-        <p class="meta" style="margin-top:10px;">Selecciona cualquier marca de tiempo en los resultados para ir al segundo exacto de la grabación.</p>
+        <video id="player" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto" style="width:100%; height:390px;"></video>
+        <p class="meta" style="margin-top:10px;">Selecciona un curso y una grabación para reproducir o haz clic en cualquier marca de tiempo.</p>
+        <div id="sessionList" class="session-list"></div>
       </div>
       <div class="card">
         <h2>Consulta en Lenguaje Natural</h2>
         <div class="search-row">
-          <input id="q" placeholder="Escribe tu pregunta sobre la clase..." onkeydown="if(event.key==='Enter') ask()"/>
-          <button id="askBtn" onclick="ask()">Consultar</button>
+          <input id="q" placeholder="Escribe tu pregunta sobre el curso o sesión..." onkeydown="if(event.key==='Enter') ask()"/>
+          <button id="askBtn" class="btn-primary" onclick="ask()">Consultar</button>
         </div>
+        <div id="scopeNote" class="scope-note"></div>
         <div id="status"></div>
         <div id="answer" class="answer" style="display:none;"></div>
         <div id="hits"></div>
@@ -184,40 +222,124 @@ def index():
   <script>
     const player = videojs('player');
     let lectures = [];
-    let currentHls = '';
+    let selectedCourse = '';
+    let selectedLectureId = '';
+    let currentMedia = '';
 
-    async function loadLectures() {
-      const res = await fetch('/api/lectures');
-      lectures = await res.json();
+    function getFilteredLectures() {
+      return selectedCourse ? lectures.filter(l => l.course === selectedCourse) : lectures;
+    }
+
+    function renderCourses() {
+      const counts = {};
+      lectures.forEach(l => { counts[l.course] = (counts[l.course] || 0) + 1; });
+      const courses = Object.keys(counts).sort();
+      const bar = document.getElementById('courseBar');
+      const pills = [
+        `<button class="course-pill ${selectedCourse === '' ? 'active' : ''}" onclick="selectCourse('')">Todos los cursos (${lectures.length})</button>`,
+        ...courses.map(c =>
+          `<button class="course-pill ${selectedCourse === c ? 'active' : ''}" onclick="selectCourse('${c.replace(/'/g, "\\'")}')">${c} (${counts[c]})</button>`
+        )
+      ];
+      bar.innerHTML = pills.join('');
+    }
+
+    function renderSessionControls() {
+      const list = getFilteredLectures();
       const sel = document.getElementById('lectureSelect');
-      sel.innerHTML = '<option value="">Todas las sesiones registradas</option>' +
-        lectures.map(l => `<option value="${l.id}">${l.title}</option>`).join('');
-      const demo = lectures.find(l => l.hls_path && l.hls_path.includes('demo_gestion_conocimiento')) ||
-                   lectures.find(l => l.hls_path);
-      if (demo) {
-        sel.value = String(demo.id);
-        setPlayerSource(demo.hls_path, demo.title);
+      const allLabel = selectedCourse ? `Todas las sesiones de ${selectedCourse}` : 'Todas las sesiones registradas';
+      sel.innerHTML = `<option value="">${allLabel}</option>` +
+        list.map(l => `<option value="${l.id}">${l.title}</option>`).join('');
+      sel.value = selectedLectureId;
+
+      const listDiv = document.getElementById('sessionList');
+      listDiv.innerHTML = list.map(l => {
+        const isActive = String(l.id) === String(selectedLectureId);
+        const tag = l.hls_path && l.chunk_count > 0
+          ? '<span class="badge badge-video">Video + Texto</span>'
+          : l.hls_path
+            ? '<span class="badge badge-video">Video</span>'
+            : '<span class="badge badge-text">Solo texto</span>';
+        return `<button class="session-item ${isActive ? 'active' : ''}" onclick="selectLecture(${l.id})">
+          <span>${l.title}</span>
+          <span>${tag}</span>
+        </button>`;
+      }).join('');
+
+      updateScopeNote();
+    }
+
+    function updateScopeNote() {
+      const note = document.getElementById('scopeNote');
+      if (selectedLectureId) {
+        const lec = lectures.find(l => String(l.id) === String(selectedLectureId));
+        note.textContent = lec ? `Ámbito de búsqueda: ${lec.course} → ${lec.title}` : '';
+      } else if (selectedCourse) {
+        note.textContent = `Ámbito de búsqueda: todas las sesiones transcritas de ${selectedCourse}`;
+      } else {
+        note.textContent = 'Ámbito de búsqueda: todos los cursos registrados';
       }
     }
 
-    function setPlayerSource(hlsPath, title) {
-      if (!hlsPath || hlsPath === currentHls) return;
-      currentHls = hlsPath;
-      document.getElementById('videoTitle').textContent = title || 'Reproductor de Video';
-      player.src({ src: hlsPath, type: 'application/x-mpegURL' });
+    function selectCourse(course) {
+      selectedCourse = course;
+      selectedLectureId = '';
+      renderCourses();
+      renderSessionControls();
+      const firstPlayable = getFilteredLectures().find(l => l.hls_path);
+      if (firstPlayable) {
+        setPlayerSource(firstPlayable.hls_path, firstPlayable.title);
+      }
     }
 
-    function onLectureChange() {
-      const val = document.getElementById('lectureSelect').value;
-      const lec = lectures.find(l => String(l.id) === val);
+    function selectLecture(id) {
+      selectedLectureId = String(id);
+      const lec = lectures.find(l => String(l.id) === selectedLectureId);
+      renderSessionControls();
       if (lec && lec.hls_path) {
         setPlayerSource(lec.hls_path, lec.title);
       }
     }
 
-    function jumpTo(sec, hlsPath, title) {
-      if (hlsPath && hlsPath !== currentHls) {
-        setPlayerSource(hlsPath, title);
+    async function loadLectures() {
+      const res = await fetch('/api/lectures');
+      lectures = await res.json();
+      const demo = lectures.find(l => l.hls_path && l.hls_path.includes('demo_gestion_conocimiento')) ||
+                   lectures.find(l => l.hls_path);
+      if (demo) {
+        selectedCourse = demo.course;
+        selectedLectureId = String(demo.id);
+        setPlayerSource(demo.hls_path, demo.title);
+      }
+      renderCourses();
+      renderSessionControls();
+    }
+
+    function setPlayerSource(mediaPath, title) {
+      if (!mediaPath || mediaPath === currentMedia) return;
+      currentMedia = mediaPath;
+      document.getElementById('videoTitle').textContent = title || 'Reproductor de Video';
+      const mime = mediaPath.toLowerCase().endsWith('.m3u8') ? 'application/x-mpegURL' : 'video/mp4';
+      player.src({ src: mediaPath, type: mime });
+    }
+
+    function onLectureChange() {
+      selectedLectureId = document.getElementById('lectureSelect').value;
+      renderSessionControls();
+      const lec = lectures.find(l => String(l.id) === selectedLectureId);
+      if (lec && lec.hls_path) {
+        setPlayerSource(lec.hls_path, lec.title);
+      }
+    }
+
+    function jumpTo(sec, mediaPath, title, lectureId) {
+      if (lectureId) {
+        selectedLectureId = String(lectureId);
+        renderSessionControls();
+      }
+      if (!mediaPath) return;
+      if (mediaPath !== currentMedia) {
+        setPlayerSource(mediaPath, title);
         player.one('loadedmetadata', () => {
           player.currentTime(sec);
           player.play();
@@ -235,9 +357,12 @@ def index():
       const status = document.getElementById('status');
       btn.disabled = true;
       status.textContent = 'Buscando fragmentos relevantes...';
-      const val = document.getElementById('lectureSelect').value;
       const payload = { question: q, top_k: 5 };
-      if (val) payload.lecture_id = parseInt(val, 10);
+      if (selectedLectureId) {
+        payload.lecture_id = parseInt(selectedLectureId, 10);
+      } else if (selectedCourse) {
+        payload.course = selectedCourse;
+      }
 
       try {
         const res = await fetch('/api/chat', {
@@ -260,7 +385,8 @@ def index():
         hitsDiv.innerHTML = data.hits.map(h => `
           <div class="hit">
             <div class="meta">
-              <button class="ts-btn" onclick="jumpTo(${h.start_sec}, '${h.hls_path}', '${h.lecture_title.replace(/'/g, '')}')">${h.timestamp}</button>
+              <button class="ts-btn" onclick="jumpTo(${h.start_sec}, '${h.hls_path}', '${h.lecture_title.replace(/'/g, '')}', ${h.lecture_id})">${h.timestamp}</button>
+              <span class="badge badge-course">${h.course || ''}</span>
               <b>${h.lecture_title}</b> &middot; Similitud: ${h.score}
             </div>
             <div style="font-size:13.5px; color:#1e293b; line-height:1.45;">${h.content}</div>

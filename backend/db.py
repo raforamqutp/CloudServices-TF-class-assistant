@@ -22,10 +22,15 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 filename TEXT UNIQUE NOT NULL,
                 title TEXT NOT NULL,
+                course TEXT NOT NULL DEFAULT 'Servicios Cloud',
                 duration_sec INTEGER DEFAULT 0,
                 hls_path TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+        conn.execute("""
+            ALTER TABLE lectures
+            ADD COLUMN IF NOT EXISTS course TEXT NOT NULL DEFAULT 'Servicios Cloud';
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS transcript_chunks (

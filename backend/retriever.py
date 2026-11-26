@@ -12,7 +12,12 @@ from backend.ingest import get_embedding_model
 _encode_lock = threading.Lock()
 
 
-def semantic_search(query: str, top_k: int = 5, lecture_id: Optional[int] = None) -> Dict:
+def semantic_search(
+    query: str,
+    top_k: int = 5,
+    lecture_id: Optional[int] = None,
+    course: Optional[str] = None,
+) -> Dict:
     t0 = time.perf_counter()
     model = get_embedding_model()
     with _encode_lock:
@@ -24,7 +29,7 @@ def semantic_search(query: str, top_k: int = 5, lecture_id: Optional[int] = None
         if lecture_id is not None:
             rows = conn.execute(
                 """
-                SELECT c.id, l.id, l.title, l.filename, l.hls_path,
+                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
                        c.start_sec, c.end_sec, c.timestamp_label, c.content,
                        1 - (c.embedding <=> %s) AS similarity
                 FROM transcript_chunks c
@@ -35,10 +40,24 @@ def semantic_search(query: str, top_k: int = 5, lecture_id: Optional[int] = None
                 """,
                 (q_emb, lecture_id, q_emb, top_k),
             ).fetchall()
+        elif course:
+            rows = conn.execute(
+                """
+                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
+                       c.start_sec, c.end_sec, c.timestamp_label, c.content,
+                       1 - (c.embedding <=> %s) AS similarity
+                FROM transcript_chunks c
+                JOIN lectures l ON l.id = c.lecture_id
+                WHERE l.course = %s
+                ORDER BY c.embedding <=> %s
+                LIMIT %s;
+                """,
+                (q_emb, course, q_emb, top_k),
+            ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT c.id, l.id, l.title, l.filename, l.hls_path,
+                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
                        c.start_sec, c.end_sec, c.timestamp_label, c.content,
                        1 - (c.embedding <=> %s) AS similarity
                 FROM transcript_chunks c
@@ -56,13 +75,14 @@ def semantic_search(query: str, top_k: int = 5, lecture_id: Optional[int] = None
             "chunk_id": r[0],
             "lecture_id": r[1],
             "lecture_title": r[2],
-            "filename": r[3],
-            "hls_path": r[4] or "",
-            "start_sec": r[5],
-            "end_sec": r[6],
-            "timestamp": r[7],
-            "content": r[8],
-            "score": round(float(r[9]), 4),
+            "course": r[3],
+            "filename": r[4],
+            "hls_path": r[5] or "",
+            "start_sec": r[6],
+            "end_sec": r[7],
+            "timestamp": r[8],
+            "content": r[9],
+            "score": round(float(r[10]), 4),
         }
         for r in rows
     ]
