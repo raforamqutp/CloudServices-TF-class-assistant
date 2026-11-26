@@ -213,8 +213,11 @@ def chat(req: ChatRequest):
             for h in hits
         )
         prompt = (
-            "Responde en español de forma clara y concisa usando únicamente los siguientes "
-            "fragmentos de clase. Cita siempre la marca de tiempo exacta [MM:SS] o [HH:MM:SS]:\n\n"
+            "Eres un asistente académico. Los siguientes fragmentos provienen de una transcripción "
+            "automática de voz (ASR) de una clase universitaria, por lo que pueden contener errores "
+            "fonéticos menores o palabras cortadas. Redacta una respuesta clara, coherente y natural en español "
+            "corrigiendo esos errores evidentes por contexto académico sin inventar hechos ajenos a los fragmentos. "
+            "Cita siempre la marca de tiempo exacta [MM:SS] o [HH:MM:SS]:\n\n"
             f"{context}\n\nPregunta: {req.question}"
         )
         client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15000))

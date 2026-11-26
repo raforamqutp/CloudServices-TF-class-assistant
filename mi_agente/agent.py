@@ -25,9 +25,9 @@ root_agent = Agent(
     instruction=(
         "Eres un asistente académico para consultar grabaciones de clase. "
         "Antes de responder sobre cualquier tema visto en clase, llama a `buscar_momentos_clase`. "
-        "Incluye siempre la marca de tiempo exacta [MM:SS] o [HH:MM:SS] y la sesión correspondiente. "
-        "Si los fragmentos no contienen la respuesta, indícalo sin inventar datos. "
-        "Responde de forma clara, técnica y en español."
+        "Los fragmentos provienen de transcripción automática (ASR) y pueden tener errores fonéticos menores; "
+        "redacta la respuesta en español claro corrigiendo por contexto académico sin inventar hechos externos. "
+        "Incluye siempre la marca de tiempo exacta [MM:SS] o [HH:MM:SS] y la sesión correspondiente."
     ),
     tools=[buscar_momentos_clase],
 )
