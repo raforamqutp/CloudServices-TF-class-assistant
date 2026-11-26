@@ -111,16 +111,6 @@ async def ingest_video_endpoint(
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "audio.mp3")
         txt_path = os.path.join(tmpdir, f"transcripcion_{os.path.splitext(safe_name)[0]}.txt")
-        ff_cmd = ["ffmpeg", "-y", "-i", video_path]
-        if max_seconds > 0:
-            ff_cmd.extend(["-t", str(max_seconds)])
-        ff_cmd.extend(["-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audio_path])
-        subprocess.run(
-            ff_cmd,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
 
         from faster_whisper import WhisperModel
         import ctranslate2
@@ -128,17 +118,33 @@ async def ingest_video_endpoint(
         has_cuda = ctranslate2.get_cuda_device_count() > 0
         device = "cuda" if has_cuda else "cpu"
         compute_type = "float16" if has_cuda else "int8"
-        whisper_size = "medium" if has_cuda else "base"
+        whisper_size = "medium" if has_cuda else "tiny"
 
         t_asr0 = time.perf_counter()
         wmodel = WhisperModel(whisper_size, device=device, compute_type=compute_type)
-        segments, _ = wmodel.transcribe(audio_path, language="es", vad_filter=True)
+
+        windows = [0, max_seconds, max_seconds * 2, max_seconds * 3] if max_seconds > 0 else [0]
         lines = []
-        for seg in segments:
-            ts = format_sec_label(int(seg.start))
-            txt = seg.text.strip()
-            if txt:
-                lines.append(f"[{ts}] {txt}")
+        for offset_sec in windows:
+            ff_cmd = ["ffmpeg", "-y"]
+            if offset_sec > 0:
+                ff_cmd.extend(["-ss", str(offset_sec)])
+            ff_cmd.extend(["-i", video_path])
+            if max_seconds > 0:
+                ff_cmd.extend(["-t", str(max_seconds)])
+            ff_cmd.extend(["-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audio_path])
+            subprocess.run(ff_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            segments, _ = wmodel.transcribe(audio_path, language="es", vad_filter=True)
+            lines = []
+            for seg in segments:
+                ts = format_sec_label(offset_sec + int(seg.start))
+                txt = seg.text.strip()
+                if txt:
+                    lines.append(f"[{ts}] {txt}")
+            if len(lines) >= 2:
+                break
+
         with open(txt_path, "w", encoding="utf-8") as tf:
             tf.write("\n".join(lines) + "\n")
         asr_time = round(time.perf_counter() - t_asr0, 2)
@@ -310,7 +316,7 @@ def index():
         <input id="ingNewCourse" type="text" placeholder="Nombre del nuevo curso..." style="display:none;" />
         <input id="ingTitle" type="text" placeholder="Título de la sesión (opcional)" />
         <select id="ingScope">
-          <option value="300">Demo rápida: primeros 5 min (ideal sin GPU)</option>
+          <option value="240">Demo rápida: 4 min con voz (ideal sin GPU)</option>
           <option value="0">Clase completa</option>
         </select>
         <input id="ingFile" type="file" accept="video/mp4,video/*" style="flex:1; padding:7px;" />

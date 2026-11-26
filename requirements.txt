@@ -4,6 +4,7 @@ psycopg[binary]>=3.2.1
 pgvector>=0.3.5
 sentence-transformers>=3.0.0
 faster-whisper>=1.1.0
+av<16
 google-adk>=0.1.0
 google-genai>=0.1.1
 psutil>=6.0.0
