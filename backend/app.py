@@ -135,25 +135,25 @@ def index():
   <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background:#0f172a; color:#f8fafc; margin:0; padding:24px; }
-    .container { max-width:1340px; margin:auto; }
-    .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
-    .topbar h1 { margin:0; font-size:21px; font-weight:700; color:#f8fafc; }
-    .topbar select { padding:8px 12px; border-radius:6px; border:1px solid #475569; background:#1e293b; color:#f8fafc; font-size:13.5px; min-width:300px; }
-    .grid { display:grid; grid-template-columns: 1.25fr 1fr; gap:20px; }
-    .card { background:#1e293b; border-radius:10px; padding:18px; border:1px solid #334155; }
-    h2 { margin:0 0 12px 0; font-size:16px; color:#cbd5e1; font-weight:600; }
-    .search-row { display:flex; gap:8px; margin-bottom:14px; }
-    input { flex:1; padding:10px 12px; border-radius:6px; border:1px solid #475569; background:#0f172a; color:#fff; font-size:14px; }
-    button { padding:10px 18px; border-radius:6px; border:none; background:#2563eb; color:#fff; font-weight:600; cursor:pointer; font-size:14px; }
-    button:hover { background:#1d4ed8; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background:#f8fafc; color:#0f172a; margin:0; padding:20px; }
+    .container { max-width:1280px; margin:auto; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #cbd5e1; }
+    .topbar h1 { margin:0; font-size:22px; font-weight:700; color:#0f172a; }
+    .topbar select { padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; font-weight:500; min-width:300px; }
+    .grid { display:grid; grid-template-columns: 1.15fr 1fr; gap:18px; }
+    .card { background:#ffffff; border-radius:10px; padding:18px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
+    h2 { margin:0 0 12px 0; font-size:17px; color:#1e293b; font-weight:700; }
+    .search-row { display:flex; gap:8px; margin-bottom:12px; }
+    input { flex:1; padding:10px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14.5px; }
+    button { padding:10px 18px; border-radius:6px; border:none; background:#1d4ed8; color:#ffffff; font-weight:600; cursor:pointer; font-size:14.5px; }
+    button:hover { background:#1e40af; }
     button:disabled { opacity:0.6; cursor:wait; }
-    .hit { background:#0f172a; border:1px solid #334155; border-radius:8px; padding:10px 12px; margin-bottom:10px; }
-    .ts-btn { background:#0ea5e9; color:#0f172a; font-weight:700; padding:3px 9px; border-radius:4px; font-size:12px; cursor:pointer; border:none; margin-right:8px; }
-    .ts-btn:hover { background:#38bdf8; }
-    .meta { font-size:12px; color:#94a3b8; margin-bottom:6px; }
-    .answer { white-space:pre-wrap; background:#0f172a; padding:14px; border-radius:8px; border-left:3px solid #38bdf8; margin-bottom:14px; font-size:13.5px; line-height:1.5; }
-    #status { font-size:12px; color:#94a3b8; margin-bottom:10px; }
+    .hit { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+    .ts-btn { background:#1d4ed8; color:#ffffff; font-weight:700; padding:4px 10px; border-radius:4px; font-size:13px; cursor:pointer; border:none; margin-right:8px; }
+    .ts-btn:hover { background:#1e40af; }
+    .meta { font-size:13px; color:#475569; margin-bottom:6px; }
+    .answer { white-space:pre-wrap; background:#eff6ff; color:#0f172a; padding:14px; border-radius:8px; border:1px solid #bfdbfe; border-left:4px solid #1d4ed8; margin-bottom:12px; font-size:14.5px; line-height:1.5; }
+    #status { font-size:13px; color:#475569; margin-bottom:10px; font-weight:500; }
   </style>
 </head>
 <body>
@@ -190,7 +190,7 @@ def index():
       const res = await fetch('/api/lectures');
       lectures = await res.json();
       const sel = document.getElementById('lectureSelect');
-      sel.innerHTML = '<option value="">Todas las sesiones indexadas</option>' +
+      sel.innerHTML = '<option value="">Todas las sesiones registradas</option>' +
         lectures.map(l => `<option value="${l.id}">${l.title}</option>`).join('');
       const demo = lectures.find(l => l.hls_path && l.hls_path.includes('demo_gestion_conocimiento')) ||
                    lectures.find(l => l.hls_path);
@@ -263,7 +263,7 @@ def index():
               <button class="ts-btn" onclick="jumpTo(${h.start_sec}, '${h.hls_path}', '${h.lecture_title.replace(/'/g, '')}')">${h.timestamp}</button>
               <b>${h.lecture_title}</b> &middot; Similitud: ${h.score}
             </div>
-            <div style="font-size:13px; color:#e2e8f0;">${h.content}</div>
+            <div style="font-size:13.5px; color:#1e293b; line-height:1.45;">${h.content}</div>
           </div>
         `).join('');
       } finally {
