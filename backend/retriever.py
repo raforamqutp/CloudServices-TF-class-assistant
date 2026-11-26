@@ -8,6 +8,7 @@ from pgvector.psycopg import register_vector
 
 from backend.db import DATABASE_URL
 from backend.ingest import get_embedding_model
+from backend.portable_store import sqlite_semantic_search
 
 _encode_lock = threading.Lock()
 
@@ -24,73 +25,77 @@ def semantic_search(
         q_emb = model.encode([query], normalize_embeddings=True, show_progress_bar=False)[0].astype(np.float32)
 
     t_db0 = time.perf_counter()
-    with psycopg.connect(DATABASE_URL) as conn:
-        register_vector(conn)
-        if lecture_id is not None:
-            rows = conn.execute(
-                """
-                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
-                       c.start_sec, c.end_sec, c.timestamp_label, c.content,
-                       1 - (c.embedding <=> %s) AS similarity
-                FROM transcript_chunks c
-                JOIN lectures l ON l.id = c.lecture_id
-                WHERE c.lecture_id = %s
-                ORDER BY c.embedding <=> %s
-                LIMIT %s;
-                """,
-                (q_emb, lecture_id, q_emb, top_k),
-            ).fetchall()
-        elif course:
-            rows = conn.execute(
-                """
-                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
-                       c.start_sec, c.end_sec, c.timestamp_label, c.content,
-                       1 - (c.embedding <=> %s) AS similarity
-                FROM transcript_chunks c
-                JOIN lectures l ON l.id = c.lecture_id
-                WHERE l.course = %s
-                ORDER BY c.embedding <=> %s
-                LIMIT %s;
-                """,
-                (q_emb, course, q_emb, top_k),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
-                       c.start_sec, c.end_sec, c.timestamp_label, c.content,
-                       1 - (c.embedding <=> %s) AS similarity
-                FROM transcript_chunks c
-                JOIN lectures l ON l.id = c.lecture_id
-                ORDER BY c.embedding <=> %s
-                LIMIT %s;
-                """,
-                (q_emb, q_emb, top_k),
-            ).fetchall()
-    t_db = (time.perf_counter() - t_db0) * 1000.0
-    t_total = (time.perf_counter() - t0) * 1000.0
-
-    results = [
-        {
-            "chunk_id": r[0],
-            "lecture_id": r[1],
-            "lecture_title": r[2],
-            "course": r[3],
-            "filename": r[4],
-            "hls_path": r[5] or "",
-            "start_sec": r[6],
-            "end_sec": r[7],
-            "timestamp": r[8],
-            "content": r[9],
-            "score": round(float(r[10]), 4),
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=2) as conn:
+            register_vector(conn)
+            if lecture_id is not None:
+                rows = conn.execute(
+                    """
+                    SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
+                           c.start_sec, c.end_sec, c.timestamp_label, c.content,
+                           1 - (c.embedding <=> %s) AS similarity
+                    FROM transcript_chunks c
+                    JOIN lectures l ON l.id = c.lecture_id
+                    WHERE c.lecture_id = %s
+                    ORDER BY c.embedding <=> %s
+                    LIMIT %s;
+                    """,
+                    (q_emb, lecture_id, q_emb, top_k),
+                ).fetchall()
+            elif course:
+                rows = conn.execute(
+                    """
+                    SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
+                           c.start_sec, c.end_sec, c.timestamp_label, c.content,
+                           1 - (c.embedding <=> %s) AS similarity
+                    FROM transcript_chunks c
+                    JOIN lectures l ON l.id = c.lecture_id
+                    WHERE l.course = %s
+                    ORDER BY c.embedding <=> %s
+                    LIMIT %s;
+                    """,
+                    (q_emb, course, q_emb, top_k),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT c.id, l.id, l.title, l.course, l.filename, l.hls_path,
+                           c.start_sec, c.end_sec, c.timestamp_label, c.content,
+                           1 - (c.embedding <=> %s) AS similarity
+                    FROM transcript_chunks c
+                    JOIN lectures l ON l.id = c.lecture_id
+                    ORDER BY c.embedding <=> %s
+                    LIMIT %s;
+                    """,
+                    (q_emb, q_emb, top_k),
+                ).fetchall()
+        t_db = (time.perf_counter() - t_db0) * 1000.0
+        t_total = (time.perf_counter() - t0) * 1000.0
+        results = [
+            {
+                "chunk_id": r[0],
+                "lecture_id": r[1],
+                "lecture_title": r[2],
+                "course": r[3],
+                "filename": r[4],
+                "hls_path": r[5] or "",
+                "start_sec": r[6],
+                "end_sec": r[7],
+                "timestamp": r[8],
+                "content": r[9],
+                "score": round(float(r[10]), 4),
+            }
+            for r in rows
+        ]
+        return {
+            "results": results,
+            "db_latency_ms": round(t_db, 2),
+            "total_latency_ms": round(t_total, 2),
         }
-        for r in rows
-    ]
-    return {
-        "results": results,
-        "db_latency_ms": round(t_db, 2),
-        "total_latency_ms": round(t_total, 2),
-    }
+    except Exception:
+        res = sqlite_semantic_search(q_emb, top_k=top_k, lecture_id=lecture_id, course=course)
+        res["total_latency_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)
+        return res
 
 
 def lexical_search(query: str, top_k: int = 5, lecture_id: Optional[int] = None) -> Dict:

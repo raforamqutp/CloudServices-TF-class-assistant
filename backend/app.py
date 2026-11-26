@@ -1,16 +1,21 @@
 import os
+import re
+import subprocess
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import numpy as np
 import psycopg
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.db import DATABASE_URL
-from backend.ingest import get_embedding_model
+from backend.ingest import format_sec_label, get_embedding_model, ingest_transcript, parse_transcript_file
+from backend.portable_store import sqlite_list_lectures, sqlite_save_lecture_chunks
 from backend.retriever import semantic_search
 
 
@@ -44,6 +49,10 @@ TICS_VIDEO_DIR = os.getenv("TICS_VIDEO_DIR", r"D:\UTP\2026 - Agosto\TICS\AG-file
 if os.path.isdir(TICS_VIDEO_DIR):
     app.mount("/media/tics", StaticFiles(directory=TICS_VIDEO_DIR), name="tics_media")
 
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "..", "uploads"))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/media/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploaded_media")
+
 
 class ChatRequest(BaseModel):
     question: str
@@ -54,29 +63,114 @@ class ChatRequest(BaseModel):
 
 @app.get("/api/lectures")
 def list_lectures():
-    with psycopg.connect(DATABASE_URL) as conn:
-        rows = conn.execute(
-            """
-            SELECT l.id, l.filename, l.title, l.course, l.duration_sec, l.hls_path,
-                   COUNT(c.id) AS chunk_count
-            FROM lectures l
-            LEFT JOIN transcript_chunks c ON c.lecture_id = l.id
-            GROUP BY l.id
-            ORDER BY l.course, (COALESCE(l.hls_path, '') <> '') DESC, l.title;
-            """
-        ).fetchall()
-    return [
-        {
-            "id": r[0],
-            "filename": r[1],
-            "title": r[2],
-            "course": r[3],
-            "duration_sec": r[4],
-            "hls_path": r[5] or "",
-            "chunk_count": r[6],
-        }
-        for r in rows
-    ]
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=2) as conn:
+            rows = conn.execute(
+                """
+                SELECT l.id, l.filename, l.title, l.course, l.duration_sec, l.hls_path,
+                       COUNT(c.id) AS chunk_count
+                FROM lectures l
+                LEFT JOIN transcript_chunks c ON c.lecture_id = l.id
+                GROUP BY l.id
+                ORDER BY l.course, (COALESCE(l.hls_path, '') <> '') DESC, l.title;
+                """
+            ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "filename": r[1],
+                "title": r[2],
+                "course": r[3],
+                "duration_sec": r[4],
+                "hls_path": r[5] or "",
+                "chunk_count": r[6],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return sqlite_list_lectures()
+
+
+@app.post("/api/ingest-video")
+async def ingest_video_endpoint(
+    file: UploadFile = File(...),
+    course: str = Form("Gestión del Conocimiento"),
+    title: str = Form(""),
+):
+    t0 = time.perf_counter()
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(file.filename or "clase.mp4"))
+    video_path = os.path.join(UPLOAD_DIR, safe_name)
+    content = await file.read()
+    with open(video_path, "wb") as out:
+        out.write(content)
+
+    final_title = title.strip() or os.path.splitext(safe_name)[0].replace("_", " ")
+    media_url = f"/media/uploads/{safe_name}"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = os.path.join(tmpdir, "audio.mp3")
+        txt_path = os.path.join(tmpdir, f"transcripcion_{os.path.splitext(safe_name)[0]}.txt")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audio_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        from faster_whisper import WhisperModel
+        import ctranslate2
+
+        has_cuda = ctranslate2.get_cuda_device_count() > 0
+        device = "cuda" if has_cuda else "cpu"
+        compute_type = "float16" if has_cuda else "int8"
+        whisper_size = "medium" if has_cuda else "base"
+
+        t_asr0 = time.perf_counter()
+        wmodel = WhisperModel(whisper_size, device=device, compute_type=compute_type)
+        segments, _ = wmodel.transcribe(audio_path, language="es", vad_filter=True)
+        lines = []
+        for seg in segments:
+            ts = format_sec_label(int(seg.start))
+            txt = seg.text.strip()
+            if txt:
+                lines.append(f"[{ts}] {txt}")
+        with open(txt_path, "w", encoding="utf-8") as tf:
+            tf.write("\n".join(lines) + "\n")
+        asr_time = round(time.perf_counter() - t_asr0, 2)
+
+        chunks = parse_transcript_file(txt_path)
+        if not chunks:
+            return {"status": "error", "detail": "No se detectó voz en la grabación."}
+
+        try:
+            res = ingest_transcript(txt_path, final_title, hls_path=media_url, course=course.strip() or "General")
+            lecture_id = res["lecture_id"]
+        except Exception:
+            emb_model = get_embedding_model()
+            embs = emb_model.encode([c["content"] for c in chunks], batch_size=32, normalize_embeddings=True, show_progress_bar=False)
+            lecture_id = sqlite_save_lecture_chunks(
+                os.path.basename(txt_path),
+                final_title,
+                course.strip() or "General",
+                chunks[-1]["end_sec"],
+                media_url,
+                chunks,
+                np.asarray(embs, dtype=np.float32),
+            )
+
+    return {
+        "status": "ok",
+        "lecture_id": lecture_id,
+        "course": course.strip() or "General",
+        "title": final_title,
+        "chunks": len(chunks),
+        "lines": len(lines),
+        "device": device,
+        "whisper_model": whisper_size,
+        "asr_time_s": asr_time,
+        "total_time_s": round(time.perf_counter() - t0, 2),
+        "hls_path": media_url,
+    }
 
 
 @app.get("/api/search")
@@ -163,7 +257,13 @@ def index():
     .course-pill:hover { border-color:#1d4ed8; color:#1d4ed8; }
     .course-pill.active { background:#1d4ed8; color:#ffffff; border-color:#1d4ed8; }
     .controls-row { display:flex; gap:10px; align-items:center; }
-    .controls-row select { padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; font-weight:500; min-width:310px; }
+    .controls-row select { padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; background:#ffffff; color:#0f172a; font-size:14px; font-weight:500; min-width:290px; }
+    .btn-outline { padding:8px 14px; border-radius:6px; border:1.5px solid #1d4ed8; background:#ffffff; color:#1d4ed8; font-weight:600; cursor:pointer; font-size:14px; }
+    .btn-outline:hover { background:#eff6ff; }
+    .ingest-panel { display:none; background:#ffffff; border:1.5px solid #93c5fd; border-radius:10px; padding:14px 16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
+    .ingest-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .ingest-row input[type="text"] { min-width:200px; flex:1; }
+    #ingestStatus { font-size:13px; color:#1e40af; margin-top:8px; font-weight:600; }
     .grid { display:grid; grid-template-columns: 1.15fr 1fr; gap:18px; }
     .card { background:#ffffff; border-radius:10px; padding:18px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,0.06); }
     h2 { margin:0 0 12px 0; font-size:17px; color:#1e293b; font-weight:700; }
@@ -195,7 +295,17 @@ def index():
       <h1>Asistente de Clases Grabadas</h1>
       <div class="controls-row">
         <select id="lectureSelect" onchange="onLectureChange()"></select>
+        <button class="btn-outline" onclick="toggleIngest()">+ Agregar clase</button>
       </div>
+    </div>
+    <div id="ingestPanel" class="ingest-panel">
+      <div class="ingest-row">
+        <input id="ingCourse" type="text" value="Demo en Vivo" placeholder="Nombre del curso (ej. TICS)" />
+        <input id="ingTitle" type="text" placeholder="Título de la sesión (opcional)" />
+        <input id="ingFile" type="file" accept="video/mp4,video/*" style="flex:1; padding:7px;" />
+        <button id="ingBtn" class="btn-primary" onclick="uploadAndIngest()">Procesar grabación</button>
+      </div>
+      <div id="ingestStatus"></div>
     </div>
     <div id="courseBar" class="course-bar"></div>
     <div class="grid">
@@ -392,6 +502,47 @@ def index():
             <div style="font-size:13.5px; color:#1e293b; line-height:1.45;">${h.content}</div>
           </div>
         `).join('');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function toggleIngest() {
+      const p = document.getElementById('ingestPanel');
+      p.style.display = p.style.display === 'block' ? 'none' : 'block';
+    }
+
+    async function uploadAndIngest() {
+      const fileInput = document.getElementById('ingFile');
+      const status = document.getElementById('ingestStatus');
+      const btn = document.getElementById('ingBtn');
+      if (!fileInput.files || !fileInput.files.length) {
+        status.textContent = 'Selecciona un archivo MP4 para procesar.';
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      fd.append('course', document.getElementById('ingCourse').value.trim() || 'General');
+      fd.append('title', document.getElementById('ingTitle').value.trim());
+
+      btn.disabled = true;
+      status.textContent = 'Extrayendo audio, transcribiendo y generando vectores...';
+      try {
+        const res = await fetch('/api/ingest-video', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          status.textContent = `Listo en ${data.total_time_s} s (${data.device.toUpperCase()} / Whisper ${data.whisper_model}): ${data.lines} líneas, ${data.chunks} fragmentos listos para consulta.`;
+          await loadLectures();
+          selectedCourse = data.course;
+          selectedLectureId = String(data.lecture_id);
+          renderCourses();
+          renderSessionControls();
+          setPlayerSource(data.hls_path, data.title);
+        } else {
+          status.textContent = data.detail || 'Error al procesar el video.';
+        }
+      } catch (e) {
+        status.textContent = 'Error de conexión durante la ingesta.';
       } finally {
         btn.disabled = false;
       }
